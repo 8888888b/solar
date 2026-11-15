@@ -94,8 +94,9 @@
     box-shadow:0 0 9px rgba(143,233,255,.9)}
 
   /* ---------- 右侧信息 ---------- */
-  #right{position:fixed;right:18px;top:72px;bottom:96px;width:376px;z-index:18;display:flex;flex-direction:column}
-  #info{overflow-y:auto;overscroll-behavior:contain;padding:18px 18px 22px;height:100%}
+  #right{position:fixed;right:18px;top:72px;width:376px;z-index:18;display:flex;flex-direction:column;
+    max-height:calc(100vh - 168px);height:auto}
+  #info{overflow-y:auto;overscroll-behavior:contain;padding:18px 18px 22px;min-height:0}
   #info::-webkit-scrollbar{width:5px}
   #info::-webkit-scrollbar-thumb{background:rgba(120,165,235,.24);border-radius:4px}
   .info-head{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:14px}
