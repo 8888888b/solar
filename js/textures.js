@@ -277,24 +277,7 @@
     sx.fillStyle = '#1a1a1a'; sx.fillRect(0, 0, sw, sh);
     drawWorldPaths(sx, sw, sh, '#d8d8d8', null);
 
-    const bc = canvas(sw, sh), bx = bc.getContext('2d');
-    bx.fillStyle = '#2a2a2a'; bx.fillRect(0, 0, sw, sh);
-    drawWorldPaths(bx, sw, sh, '#8a8a8a', null);
-    // 凹凸噪声
-    const bn = noiseField(512, 256, 30, 5, 909);
-    const bimg = bx.getImageData(0, 0, sw, sh);
-    for (let y = 0; y < sh; y++) {
-      for (let x = 0; x < sw; x++) {
-        const i = (y * sw + x) * 4;
-        const base = bimg.data[i];
-        const n = bilinear(bn, 512, 256, (x + 0.5) / sw, (y + 0.5) / sh);
-        const v2 = clamp(base + (n - 0.5) * 90, 0, 255);
-        bimg.data[i] = v2; bimg.data[i + 1] = v2; bimg.data[i + 2] = v2;
-      }
-    }
-    bx.putImageData(bimg, 0, 0);
-
-    return { day: oc, night: nc, clouds: cc, spec: sc2, bump: bc };
+    return { day: oc, night: nc, clouds: cc, spec: sc2 };
   }
 
   /* ---------------- 太阳 ---------------- */

@@ -2,8 +2,33 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>太阳系探索器 · Solar System Explorer</title>
+<script>
+/* 移动端判定 + #mobile 跳转（尽早执行，避免首帧布局跳动） */
+(function () {
+  var ua = navigator.userAgent || '';
+  var uaMobile = /Android|iPhone|iPad|iPod|IEMobile|Mobile|HarmonyOS|BlackBerry|Opera Mini|Windows Phone|MicroMessenger/i.test(ua);
+  var coarse = false;
+  try { coarse = window.matchMedia('(pointer:coarse)').matches && navigator.maxTouchPoints > 1; } catch (e) {}
+  var hash = (location.hash || '').toLowerCase();
+  var forcedMobile = hash === '#mobile';
+  var forcedDesktop = hash === '#desktop';
+
+  if (forcedMobile) {
+    window.__MOBILE_MODE = 'hash';
+  } else if (forcedDesktop) {
+    window.__MOBILE_MODE = 'off';
+  } else if (uaMobile || coarse) {
+    window.__MOBILE_MODE = 'ua';
+    var target = location.pathname + location.search + '#mobile';
+    try { location.replace(target); } catch (e) { location.hash = 'mobile'; }
+  }
+  if (window.__MOBILE_MODE && window.__MOBILE_MODE !== 'off') {
+    document.documentElement.className += ' is-mobile';
+  }
+})();
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ffb347'/%3E%3Cellipse cx='16' cy='16' rx='14' ry='5' fill='none' stroke='%236fb6ff' stroke-width='1.6' transform='rotate(-22 16 16)'/%3E%3C/svg%3E">
 <style>
   :root{
@@ -211,38 +236,121 @@
   #hint b{color:#cfe2ff;font-weight:500}
 
   #mobile-nav{display:none}
+  #drawer-mask{display:none}
+  #sheet-handle{display:none}
+  #btn-menu{display:none}
+  #drawer-foot{display:none}
 
   @media (max-width:1100px){
     #left{width:176px}
     #right{width:320px}
   }
-  @media (max-width:860px){
-    #left{display:none}
-    #left.open{display:flex;z-index:25;width:210px}
-    #right{left:10px;right:10px;width:auto;top:auto;bottom:74px;height:44vh;
-      border-radius:14px;background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(16px)}
-    #info{padding:14px}
-    #right.hide{display:none}
-    #info-close{display:flex}
-    .brand em{display:none}
-    .tbtn{height:31px;padding:0 9px;font-size:11.5px}
-    .tbtn span.tl{display:none}
-    #hud-top{padding:0 12px;height:56px}
-    #bottom{gap:8px;padding:7px 12px;bottom:10px;width:calc(100% - 20px);justify-content:center}
-    #speed{width:88px}
-    #speedlabel{min-width:60px;font-size:10.5px}
-    #date{min-width:0;font-size:11px}
-    .vline{display:none}
-    #mobile-nav{display:flex;position:fixed;left:12px;bottom:auto;top:58px;z-index:26;
-      height:32px;padding:0 12px;border-radius:16px;align-items:center;gap:6px;font-size:11.5px;
-      background:rgba(14,24,42,.9);border:1px solid var(--line);backdrop-filter:blur(10px)}
-    #hint{white-space:normal;text-align:center;font-size:10.5px;line-height:1.6;top:96px;
-      max-width:88vw;border-radius:12px}
-    #date{display:none}
-    #now{padding:3px 6px;font-size:10.5px;white-space:nowrap}
-    #speed{width:78px}
-    #toast{bottom:auto;top:120px}
-    .srow span{flex:0 0 74px}
+
+  /* ============================================================
+     移动端（html.is-mobile：UA 判定 / #mobile / 窄窗口）
+     ============================================================ */
+  html.is-mobile{--bbar:54px;height:100%}
+  html.is-mobile,html.is-mobile body{height:100%;height:100dvh;overscroll-behavior:none}
+  html.is-mobile body{position:fixed;inset:0;width:100%}
+  html.is-mobile #c{touch-action:none;-webkit-user-select:none;user-select:none}
+  html.is-mobile #labels{touch-action:none}
+
+  /* 顶栏 */
+  html.is-mobile #hud-top{height:calc(52px + env(safe-area-inset-top));
+    padding:env(safe-area-inset-top) 10px 0;align-items:center}
+  html.is-mobile .brand{gap:8px;min-width:0}
+  html.is-mobile .brand h1{font-size:13px;letter-spacing:.6px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  html.is-mobile .brand em{display:none}
+  html.is-mobile .brand .bdot{width:9px;height:9px}
+  html.is-mobile .tools{gap:5px;flex:0 0 auto}
+  html.is-mobile .tbtn{width:33px;height:33px;padding:0;justify-content:center;
+    border-radius:10px;font-size:13.5px}
+  html.is-mobile .tbtn .tl{display:none}
+  html.is-mobile #btn-menu{display:flex;width:33px}
+  html.is-mobile #btn-menu .ti{font-size:15px}
+
+  /* 左侧抽屉 */
+  html.is-mobile #left{display:flex;position:fixed;left:0;top:0;bottom:0;width:min(80vw,306px);
+    max-height:none;border-radius:0 18px 18px 0;z-index:44;
+    padding:calc(16px + env(safe-area-inset-top)) 10px calc(14px + env(safe-area-inset-bottom)) 12px;
+    transform:translateX(-104%);transition:transform .28s cubic-bezier(.32,.72,0,1);
+    background:rgba(9,14,26,.96);box-shadow:12px 0 44px rgba(0,0,0,.55)}
+  html.is-mobile #left.open{transform:none}
+  html.is-mobile #drawer-mask{display:block;position:fixed;inset:0;z-index:42;
+    background:rgba(2,5,12,.58);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
+    opacity:0;pointer-events:none;transition:opacity .28s}
+  html.is-mobile #drawer-mask.show{opacity:1;pointer-events:auto}
+  html.is-mobile .panel-cap{font-size:10px;padding-bottom:8px}
+  html.is-mobile .body-item{height:44px;font-size:14.5px;border-radius:10px}
+  html.is-mobile .body-item .dot{width:9px;height:9px}
+  html.is-mobile .body-item .cnt{font-size:11px;padding:2px 7px}
+  html.is-mobile .body-item.moon{height:40px;font-size:13.2px}
+  html.is-mobile .body-item.moon .mi{width:5px;height:5px}
+  html.is-mobile .side-sep{padding:14px 8px 6px}
+  html.is-mobile #drawer-foot{display:block;margin-top:auto;padding:12px 6px 2px;
+    border-top:1px solid var(--line)}
+  html.is-mobile #to-desktop{font-size:11.5px;color:var(--muted);padding:6px 4px;width:100%;text-align:left}
+  html.is-mobile #to-desktop:hover{color:#fff}
+
+  /* 右侧信息：底部抽屉 */
+  html.is-mobile #right{left:0;right:0;top:auto;bottom:calc(var(--bbar) + env(safe-area-inset-bottom));
+    width:auto;max-height:54dvh;height:auto;z-index:34;
+    border-radius:20px 20px 0 0;border-left:none;border-right:none;border-bottom:none;
+    background:rgba(10,15,28,.95);transition:transform .3s cubic-bezier(.32,.72,0,1);
+    will-change:transform;touch-action:pan-y}
+  html.is-mobile #right.hide{transform:translateY(calc(100% + 12px));pointer-events:none}
+  html.is-mobile #right:after{content:"";position:absolute;left:0;right:0;bottom:0;height:30px;
+    pointer-events:none;border-radius:0;background:linear-gradient(180deg,rgba(10,15,28,0),rgba(10,15,28,.92))}
+  html.is-mobile #right.dragging{transition:none}
+  html.is-mobile #sheet-handle{display:flex;align-items:center;justify-content:center;
+    height:22px;flex:0 0 auto;cursor:grab;touch-action:none}
+  html.is-mobile #sheet-handle i{width:40px;height:4px;border-radius:3px;background:rgba(160,190,230,.42)}
+  html.is-mobile #info{padding:2px 16px calc(18px + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling:touch;touch-action:pan-y}
+  html.is-mobile #info-close{display:flex;width:30px;height:30px;top:4px;right:8px;font-size:12px}
+  html.is-mobile .ih-title h2{font-size:21px}
+  html.is-mobile .desc{font-size:13px;line-height:1.8}
+  html.is-mobile .facts{font-size:12.5px}
+  html.is-mobile .chip{padding:8px 13px;font-size:12.5px;border-radius:10px}
+  html.is-mobile .srow{padding:8px 0;font-size:12.5px}
+  html.is-mobile .srow span{flex:0 0 76px}
+  html.is-mobile .coord{grid-template-columns:1fr 1fr;gap:8px 10px}
+
+  /* 底栏 */
+  html.is-mobile #bottom{left:0;right:0;bottom:0;transform:none;width:auto;border-radius:0;
+    height:calc(var(--bbar) + env(safe-area-inset-bottom));
+    padding:0 12px env(safe-area-inset-bottom);gap:9px;justify-content:center;z-index:36;
+    border-left:none;border-right:none;border-bottom:none;
+    background:linear-gradient(180deg,rgba(8,13,24,.72),rgba(8,13,24,.96));
+    -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+  html.is-mobile #speed{width:auto;flex:1 1 auto;min-width:56px;max-width:160px}
+  html.is-mobile #speedlabel{min-width:56px;font-size:11px;white-space:nowrap;flex:0 0 auto}
+  html.is-mobile #date{display:none}
+  html.is-mobile .vline{display:none}
+  html.is-mobile #now{font-size:11.5px;padding:7px 9px;white-space:nowrap}
+  html.is-mobile .play{width:36px;height:36px}
+  html.is-mobile .rbtn{width:32px;height:32px}
+
+  /* 标签 / 提示 */
+  html.is-mobile .lbl{font-size:10.5px;padding:1px 5px 1px 4px;gap:4px}
+  html.is-mobile .lbl i{width:3px;height:3px}
+  html.is-mobile .lbl-moon{font-size:9.5px}
+  html.is-mobile #hint{top:calc(58px + env(safe-area-inset-top));white-space:normal;text-align:center;
+    font-size:10.5px;line-height:1.55;max-width:90vw;border-radius:12px;padding:6px 12px}
+  html.is-mobile #toast{top:calc(62px + env(safe-area-inset-top));bottom:auto;z-index:46;font-size:12px;
+    max-width:86vw;text-align:center;white-space:normal}
+  html.is-mobile #pinlabel{font-size:10px;padding:2px 6px}
+
+  @media (max-width:380px){
+    html.is-mobile .tbtn{width:30px;height:30px;font-size:12.5px}
+    html.is-mobile .brand h1{font-size:12px;letter-spacing:0}
+  }
+  @media (orientation:landscape) and (max-height:560px){
+    html.is-mobile #right{left:auto;right:0;width:min(56vw,400px);max-height:calc(100dvh - 62px);
+      border-radius:16px 0 0 0}
+    html.is-mobile #hint{display:none}
+    html.is-mobile #left{width:min(64vw,300px)}
   }
 </style>
 </head>
@@ -257,6 +365,7 @@
     <h1>太阳系探索器<em>Solar System</em></h1>
   </div>
   <div class="tools">
+    <button class="tbtn" id="btn-menu" title="天体列表"><span class="ti">☰</span></button>
     <button class="tbtn" id="btn-labels"><span class="ti">◎</span><span class="tl">名称</span></button>
     <button class="tbtn" id="btn-orbits"><span class="ti">◯</span><span class="tl">轨道</span></button>
     <button class="tbtn" id="btn-belt"><span class="ti">⁙</span><span class="tl">小行星带</span></button>
@@ -265,17 +374,19 @@
   </div>
 </header>
 
+<div id="drawer-mask"></div>
+
 <aside id="left" class="glass">
   <div class="panel-cap">天体导航</div>
   <div id="bodylist"></div>
+  <div id="drawer-foot"><button id="to-desktop">切换到桌面版 ›</button></div>
 </aside>
 
 <aside id="right" class="glass">
+  <div id="sheet-handle"><i></i></div>
   <button id="info-close" title="收起">✕</button>
   <div id="info"></div>
 </aside>
-
-<div id="mobile-nav">☰ 天体</div>
 
 <footer id="bottom">
   <button class="play" id="play">暂停</button>
@@ -303,12 +414,5 @@
 <script src="js/data.js"></script>
 <script src="js/textures.js"></script>
 <script src="js/app.js"></script>
-<script>
-  // 移动端：左栏抽屉开关
-  document.getElementById('mobile-nav').addEventListener('click', function(){
-    var l = document.getElementById('left');
-    l.classList.toggle('open');
-  });
-</script>
 </body>
 </html>

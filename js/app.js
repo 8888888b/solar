@@ -8,6 +8,17 @@
   const J2000 = 2451545.0;
   const $ = (s) => document.querySelector(s);
 
+  /* ---------------- 移动端模式 ---------------- */
+  const MODE = window.__MOBILE_MODE || null;    // 'ua' | 'hash' | 'off' | null
+  function computeMobile() {
+    if (MODE === 'hash') return true;
+    if (MODE === 'off') return false;
+    if (MODE === 'ua') return true;
+    return window.innerWidth <= 900;
+  }
+  let IS_MOBILE = computeMobile();
+  document.documentElement.classList.toggle('is-mobile', IS_MOBILE);
+
   /* ---------------- 尺度换算（视觉压缩，保证所有天体可见） ---------------- */
   const DIST_K = 70, DIST_P = 0.6;      // 轨道距离压缩
   const SIZE_K = 3.7, SIZE_P = 0.41;    // 天体半径压缩
@@ -30,7 +41,7 @@
     showOrbits: true,
     showBelt: true,
     pin: null,
-    quality: /hq/.test(location.search) ? 'hq' : 'normal'
+    quality: /hq/.test(location.search) ? 'hq' : (IS_MOBILE ? 'mobile' : 'normal')
   };
 
   const bodies = [];          // 全部天体（含卫星）
@@ -47,11 +58,11 @@
   function initScene() {
     const canvas = $('#c');
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, IS_MOBILE ? 1.6 : 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.05, 9000);
+    camera = new THREE.PerspectiveCamera(IS_MOBILE ? 52 : 45, window.innerWidth / window.innerHeight, 0.05, 9000);
     camera.position.set(0, 210, 420);
 
     sunLight = new THREE.PointLight(0xfff4e0, 1.18, 0, 0);
@@ -64,7 +75,7 @@
   }
 
   function buildStars() {
-    const N = 14000;
+    const N = IS_MOBILE ? 6500 : 14000;
     const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
     const rnd = Math.random;
     for (let i = 0; i < N; i++) {
@@ -117,8 +128,8 @@
       const m = new THREE.PointsMaterial({ color: color, size: size, transparent: true, opacity: op, depthWrite: false, sizeAttenuation: true });
       return new THREE.Points(g, m);
     }
-    belt = cloud(2600, 2.06, 3.32, 0.05, 0.13, 0xb9a68f, 0.34);
-    kuiper = cloud(3200, 30, 49, 0.12, 0.4, 0x8fa7c9, 0.26);
+    belt = cloud(IS_MOBILE ? 1100 : 2600, 2.06, 3.32, 0.05, IS_MOBILE ? 0.17 : 0.13, 0xb9a68f, 0.34);
+    kuiper = cloud(IS_MOBILE ? 1500 : 3200, 30, 49, 0.12, 0.4, 0x8fa7c9, 0.26);
     scene.add(belt); scene.add(kuiper);
   }
 
@@ -193,18 +204,23 @@
   function buildTexture(def, isMoon, radiusKm) {
     const T = window.TEX;
     const kind = def.kind;
+    const q = state.quality;
     if (kind === 'earth') {
-      const W = state.quality === 'hq' ? 4096 : 2560;
+      const W = q === 'hq' ? 4096 : q === 'mobile' ? 1536 : 2560;
       const e = T.makeEarth(W, W / 2);
       return {
         day: texFromCanvas(e.day), night: texFromCanvas(e.night), clouds: texFromCanvas(e.clouds),
-        spec: texFromCanvas(e.spec), bump: texFromCanvas(e.bump), earth: true
+        spec: texFromCanvas(e.spec), earth: true
       };
     }
     const small = isMoon && !(radiusKm > 900);
-    const W = isMoon ? (small ? 512 : 1024) : 1536;
-    const H = W / 2;
-    if (kind === 'sun') return { map: texFromCanvas(T.makeSun(1536, 768)) };
+    let W = isMoon ? (small ? 512 : 1024) : 1536;
+    if (q === 'mobile') W = Math.max(288, Math.round(W * 0.62));
+    const H = Math.round(W / 2);
+    if (kind === 'sun') {
+      const sw = q === 'mobile' ? 1024 : 1536;
+      return { map: texFromCanvas(T.makeSun(sw, sw / 2)) };
+    }
     if (kind === 'gas') return { map: texFromCanvas(T.makeGas(Object.assign({ W: W, H: H }, def))) };
     if (kind === 'cloud') return { map: texFromCanvas(T.makeCloudy(Object.assign({ W: W, H: H }, def))) };
     if (kind === 'europa') return { map: texFromCanvas(T.makeIce(Object.assign({ W: W, H: H }, def))) };
@@ -596,6 +612,31 @@
   }
 
   const _v = new THREE.Vector3();
+  const _occA = new THREE.Vector3(), _occB = new THREE.Vector3();
+  let _occluders = null;
+  // 相机 → 天体 的视线是否被更大的天体挡住（简单球-线段相交）
+  function occludedByBody(b, camPos) {
+    if (b === state.selected) return false;
+    if (!_occluders) _occluders = bodies.filter((o) => !o.isMoon && !o.isComet);
+    const tgt = b.world;
+    _occA.copy(tgt).sub(camPos);
+    const len = _occA.length();
+    if (len < 1e-3) return false;
+    _occA.divideScalar(len);
+    for (let i = 0; i < _occluders.length; i++) {
+      const o = _occluders[i];
+      if (o === b || o === b.parent) continue;
+      const r = o.visR;
+      if (r < 0.35) continue;
+      _occB.copy(o.world).sub(camPos);
+      const t = _occB.dot(_occA);
+      if (t <= 0 || t >= len) continue;
+      const perp2 = _occB.lengthSq() - t * t;
+      if (perp2 < r * r * 0.8) return true;
+    }
+    return false;
+  }
+
   function updateLabels() {
     const w = window.innerWidth, h = window.innerHeight;
     const sel = state.selected;
@@ -613,6 +654,10 @@
       if (x < -50 || x > w + 50 || y < -24 || y > h + 24 || d > 2600) {
         L.el.style.display = 'none'; continue;
       }
+      // 被前方天体遮挡的标签不显示（避免标签浮在别的星球上）
+      if (occludedByBody(b, camera.position)) { L.el.style.display = 'none'; continue; }
+      // 已聚焦且靠得很近时，天体本身占满视野，不再重复标注
+      if (b === sel && d < b.visR * (IS_MOBILE ? 10 : 8)) { L.el.style.display = 'none'; continue; }
       arr.push({ L: L, b: b, x: x, y: y, d: d });
     }
     // 重要天体优先占位，避免标签互相叠压
@@ -623,7 +668,8 @@
     });
     const placed = [];
     for (const it of arr) {
-      const wpx = it.b.name.length * 12.5 + 18, hpx = 15;
+      const cw = IS_MOBILE ? 10.2 : 12.5;
+      const wpx = it.b.name.length * cw + 15, hpx = IS_MOBILE ? 13 : 15;
       let hit = false;
       for (const p of placed) {
         if (Math.abs(p.x - it.x) < (p.w + wpx) / 2 && Math.abs(p.y - it.y) < (p.h + hpx) / 2) { hit = true; break; }
@@ -720,6 +766,7 @@
     theta: 0.7, phi: 1.05,
     dTheta: 0, dPhi: 0
   };
+  const _look = new THREE.Vector3();
 
   function initControls() {
     const el = renderer.domElement;
@@ -761,7 +808,7 @@
       pointers.delete(e.pointerId);
       dragging = false;
       if (pinchDist) pinchDist = 0;
-      if (wasSingle && moved < 6 && performance.now() - downTime < 600) {
+      if (wasSingle && moved < (e.pointerType === 'touch' ? 11 : 6) && performance.now() - downTime < 700) {
         handleClick(e.clientX, e.clientY);
       }
     });
@@ -792,7 +839,16 @@
     const y = cam.dist * cp;
     const z = cam.dist * sp * Math.cos(cam.theta);
     camera.position.set(cam.target.x + x, cam.target.y + y, cam.target.z + z);
-    camera.lookAt(cam.target);
+
+    // 移动端底部面板展开时，把目标点下移，让天体显示在未被遮挡的上半屏
+    const sheet = IS_MOBILE ? document.getElementById('right') : null;
+    if (sheet && !sheet.classList.contains('hide')) {
+      _look.copy(cam.target);
+      _look.y -= cam.dist * 0.26;
+      camera.lookAt(_look);
+    } else {
+      camera.lookAt(cam.target);
+    }
   }
 
   /* ============================================================
@@ -1438,11 +1494,74 @@
   }
 
   /* ============================================================
+     15.5 移动端交互（抽屉 / 底部面板 / 切回桌面版）
+     ============================================================ */
+  function initMobileUI() {
+    const left = document.getElementById('left');
+    const mask = document.getElementById('drawer-mask');
+    const menu = document.getElementById('btn-menu');
+
+    function setDrawer(open) {
+      left.classList.toggle('open', open);
+      mask.classList.toggle('show', open);
+    }
+    if (menu) menu.addEventListener('click', () => setDrawer(!left.classList.contains('open')));
+    if (mask) mask.addEventListener('click', () => setDrawer(false));
+
+    // 点选天体后收起抽屉（展开卫星的箭头除外）
+    left.addEventListener('click', (e) => {
+      if (!IS_MOBILE) return;
+      const item = e.target.closest('.body-item');
+      if (!item) return;
+      if (e.target.classList.contains('arw') || e.target.classList.contains('cnt')) return;
+      setTimeout(() => setDrawer(false), 140);
+    });
+
+    // 切回桌面版（需要重载，布局与贴图精度都不同）
+    const dbtn = document.getElementById('to-desktop');
+    if (dbtn) {
+      dbtn.addEventListener('click', () => {
+        // 只改 hash 不会重载，而桌面版需要按桌面精度重建贴图，所以强制刷新
+        location.replace(location.pathname + location.search + '#desktop');
+        location.reload();
+      });
+    }
+
+    // 底部面板：下拉手柄关闭
+    const sheet = document.getElementById('right');
+    const handle = document.getElementById('sheet-handle');
+    let sy = 0, dy = 0, swiping = false;
+    handle.addEventListener('pointerdown', (e) => {
+      swiping = true; sy = e.clientY; dy = 0;
+      sheet.classList.add('dragging');
+      try { handle.setPointerCapture(e.pointerId); } catch (err) { }
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!swiping) return;
+      dy = Math.max(-4, e.clientY - sy);
+      sheet.style.transform = 'translateY(' + Math.max(0, dy) + 'px)';
+    });
+    function endSwipe() {
+      if (!swiping) return;
+      swiping = false;
+      sheet.classList.remove('dragging');
+      const h = sheet.getBoundingClientRect().height;
+      if (dy > Math.min(80, h * 0.2)) sheet.classList.add('hide');
+      sheet.style.transform = '';
+      dy = 0;
+    }
+    handle.addEventListener('pointerup', endSwipe);
+    handle.addEventListener('pointercancel', endSwipe);
+  }
+
+  /* ============================================================
      16. 启动
      ============================================================ */
   async function main() {
     initScene();
     initControls();
+    initMobileUI();
     buildSidebar();
     initToolbar();
     initTimeBar();
@@ -1467,16 +1586,44 @@
     const rp0 = document.getElementById('right');
     const ic0 = document.getElementById('info-close');
     if (ic0 && rp0) ic0.addEventListener('click', () => rp0.classList.add('hide'));
-    if (window.innerWidth <= 860 && rp0) rp0.classList.add('hide');
+    if (IS_MOBILE && rp0) rp0.classList.add('hide');
+
+    if (IS_MOBILE) {
+      const h = $('#hint');
+      if (h) h.innerHTML = '<b>拖动</b>旋转 · <b>双指</b>缩放 · <b>点天体</b>看资料 · <b>☰</b>天体列表';
+    }
+
     // 开场视角：略俯视内太阳系
-    cam.dist = 900; cam.desiredDist = 380;
+    if (IS_MOBILE) {
+      cam.dist = 1180; cam.desiredDist = 540; cam.phi = 0.98;
+    } else {
+      cam.dist = 900; cam.desiredDist = 380;
+    }
     setTimeout(() => { $('#hint').classList.remove('gone'); }, 600);
+    setTimeout(hideHint, 9000);
   }
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // 非强制模式下，窄窗口自动切到移动端布局
+    if (MODE === null) {
+      const m = window.innerWidth <= 900;
+      if (m !== IS_MOBILE) {
+        IS_MOBILE = m;
+        document.documentElement.classList.toggle('is-mobile', m);
+      }
+    }
+  });
+
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }, 260);
   });
 
   window.addEventListener('DOMContentLoaded', main);
